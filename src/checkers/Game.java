@@ -77,19 +77,13 @@ public class Game {
         return moves;
     }
 
-    // Получение ходов со взятием
-    private List<Cell> getCaptureMoves(Checker checker) {
-        List<Cell> captureMoves = new ArrayList<>();
-        findCaptureMoves(checker, checker.getCell(), captureMoves, new ArrayList<>());
-        return captureMoves;
-    }
-
     // Рекурсивный поиск взятий (для множественного взятия)
-    private void findCaptureMoves(Checker checker, Cell currentCell, List<Cell> captureMoves, List<Cell> path) {
+    private void findCaptureMoves(Checker checker, Cell currentCell, List<Cell> captureMoves, List<Checker> capturedCheckers) {
         int x = currentCell.getX();
         int y = currentCell.getY();
 
         int[][] directions = getDirections(checker);
+        boolean foundCapture = false;
 
         for (int[] dir : directions) {
             // Клетка с шашкой противника
@@ -105,19 +99,26 @@ public class Game {
             if (enemyCell != null && targetCell != null &&
                     enemyCell.hasChecker() &&
                     enemyCell.getChecker().getColor() != checker.getColor() &&
-                    targetCell.isEmpty()) {
+                    targetCell.isEmpty() &&
+                    !capturedCheckers.contains(enemyCell.getChecker())) {
 
-                // Проверяем, не повторяем ли мы ход (для множественного взятия)
-                if (!path.contains(targetCell)) {
-                    captureMoves.add(targetCell);
+                // Добавляем ход
+                captureMoves.add(targetCell);
+                foundCapture = true;
 
-                    // Рекурсивно ищем продолжение взятия
-                    List<Cell> newPath = new ArrayList<>(path);
-                    newPath.add(targetCell);
-                    findCaptureMoves(checker, targetCell, captureMoves, newPath);
-                }
+                // Рекурсивно ищем продолжение взятия
+                List<Checker> newCaptured = new ArrayList<>(capturedCheckers);
+                newCaptured.add(enemyCell.getChecker());
+                findCaptureMoves(checker, targetCell, captureMoves, newCaptured);
             }
         }
+    }
+
+    // Обновленный метод getCaptureMoves
+    private List<Cell> getCaptureMoves(Checker checker) {
+        List<Cell> captureMoves = new ArrayList<>();
+        findCaptureMoves(checker, checker.getCell(), captureMoves, new ArrayList<>());
+        return captureMoves;
     }
 
     // Получение направлений движения в зависимости от типа шашки
