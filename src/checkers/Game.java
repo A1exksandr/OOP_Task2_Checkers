@@ -9,6 +9,8 @@ public class Game {
     private Player[] players;
     private Player currentPlayer;
     private GameState gameState;
+    private Checker activeCapturingChecker = null;
+    private List<Checker> capturedThisTurn = new ArrayList<>();
 
     public Game() {
         this.board = new Board();
@@ -24,89 +26,75 @@ public class Game {
     public Board getBoard() { return board; }
     public Player getCurrentPlayer() { return currentPlayer; }
     public GameState getGameState() { return gameState; }
+    public Checker getActiveCapturingChecker() { return activeCapturingChecker; }
 
     // Основной метод получения допустимых ходов
     public List<Cell> getValidMoves(Checker checker) {
-        List<Cell> validMoves = new ArrayList<>();
-
-        if (checker.getColor() != currentPlayer.getColor()) {
-            return validMoves; // Не своя шашка - нет ходов
+        if (activeCapturingChecker != null) {
+            if (checker == activeCapturingChecker) {
+                return getCaptureMoves(checker, capturedThisTurn);
+            } else {
+                return new ArrayList<>(); // нельзя ходить другими шашками
+            }
         }
 
-        // Проверяем, есть ли обязательные взятия
-        boolean mustCapture = mustCaptureExists();
+        List<Cell> validMoves = new ArrayList<>();
+        if (checker.getColor() != currentPlayer.getColor()) {
+            return validMoves;
+        }
 
+        boolean mustCapture = mustCaptureExists();
         if (mustCapture) {
-            validMoves.addAll(getCaptureMoves(checker));
+            validMoves.addAll(getCaptureMoves(checker, new ArrayList<>()));
         } else {
             validMoves.addAll(getNormalMoves(checker));
         }
-
         return validMoves;
     }
 
-    // Проверка наличия обязательных взятий у любого игрока
     private boolean mustCaptureExists() {
         for (Checker checker : board.getCheckersByColor(currentPlayer.getColor())) {
-            if (!getCaptureMoves(checker).isEmpty()) {
+            if (!getCaptureMoves(checker, new ArrayList<>()).isEmpty()) {
                 return true;
             }
         }
         return false;
     }
 
-    // Получение обычных ходов
     private List<Cell> getNormalMoves(Checker checker) {
         List<Cell> moves = new ArrayList<>();
         int x = checker.getCell().getX();
         int y = checker.getCell().getY();
-
-        // Направления движения в зависимости от цвета и типа шашки
         int[][] directions = getDirections(checker);
-
         for (int[] dir : directions) {
             int newX = x + dir[0];
             int newY = y + dir[1];
-
             Cell targetCell = board.getCell(newX, newY);
             if (targetCell != null && targetCell.isEmpty()) {
                 moves.add(targetCell);
             }
         }
-
         return moves;
     }
 
-    // Рекурсивный поиск взятий (для множественного взятия)
     private void findCaptureMoves(Checker checker, Cell currentCell, List<Cell> captureMoves, List<Checker> capturedCheckers) {
         int x = currentCell.getX();
         int y = currentCell.getY();
-
         int[][] directions = getDirections(checker);
-        boolean foundCapture = false;
-
         for (int[] dir : directions) {
-            // Клетка с шашкой противника
             int enemyX = x + dir[0];
             int enemyY = y + dir[1];
             Cell enemyCell = board.getCell(enemyX, enemyY);
-
-            // Клетка за шашкой противника
             int targetX = x + 2 * dir[0];
             int targetY = y + 2 * dir[1];
             Cell targetCell = board.getCell(targetX, targetY);
-
             if (enemyCell != null && targetCell != null &&
                     enemyCell.hasChecker() &&
                     enemyCell.getChecker().getColor() != checker.getColor() &&
                     targetCell.isEmpty() &&
                     !capturedCheckers.contains(enemyCell.getChecker())) {
 
-                // Добавляем ход
                 captureMoves.add(targetCell);
-                foundCapture = true;
-
-                // Рекурсивно ищем продолжение взятия
                 List<Checker> newCaptured = new ArrayList<>(capturedCheckers);
                 newCaptured.add(enemyCell.getChecker());
                 findCaptureMoves(checker, targetCell, captureMoves, newCaptured);
@@ -114,73 +102,73 @@ public class Game {
         }
     }
 
-    // метод getCaptureMoves
     private List<Cell> getCaptureMoves(Checker checker) {
+        return getCaptureMoves(checker, new ArrayList<>());
+    }
+
+    private List<Cell> getCaptureMoves(Checker checker, List<Checker> alreadyCaptured) {
         List<Cell> captureMoves = new ArrayList<>();
-        findCaptureMoves(checker, checker.getCell(), captureMoves, new ArrayList<>());
+        findCaptureMoves(checker, checker.getCell(), captureMoves, alreadyCaptured);
         return captureMoves;
     }
 
-    // Получение направлений движения в зависимости от типа шашки
     private int[][] getDirections(Checker checker) {
         if (checker.getType() == CheckerType.KING) {
-            // Дамка ходит во всех направлениях
             return new int[][]{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
         } else {
-            // Обычная шашка - только вперед
             if (checker.isWhite()) {
-                return new int[][]{{1, -1}, {-1, -1}}; // Белые вверх
+                return new int[][]{{1, -1}, {-1, -1}};
             } else {
-                return new int[][]{{1, 1}, {-1, 1}};   // Черные вниз
+                return new int[][]{{1, 1}, {-1, 1}};
             }
         }
     }
 
-    // Основной метод выполнения хода
     public void makeMove(Checker checker, Cell targetCell) {
-        Cell fromCell = checker.getCell();
+        if (activeCapturingChecker != null && activeCapturingChecker != checker) {
+            return; // нельзя менять шашку во время цепочки
+        }
 
-        // Перемещаем шашку
+        Cell fromCell = checker.getCell();
         board.moveChecker(checker, targetCell);
 
-        // Проверяем взятие
         if (isCaptureMove(fromCell, targetCell)) {
             Cell capturedCell = getCapturedCell(fromCell, targetCell);
             if (capturedCell != null && capturedCell.hasChecker()) {
-                board.removeChecker(capturedCell.getChecker());
+                Checker capturedChecker = capturedCell.getChecker();
+                capturedThisTurn.add(capturedChecker);
             }
         }
 
-        // Проверяем превращение в дамку
         checkPromotion(checker);
 
-        // Проверяем возможность продолжения взятия
-        if (isCaptureMove(fromCell, targetCell) && canContinueCapture(checker)) {
-            // Ход продолжается тем же игроком - не переключаем
+        if (isCaptureMove(fromCell, targetCell) && canContinueCapture(checker, capturedThisTurn)) {
+            activeCapturingChecker = checker;
             return;
         }
 
-        // Переключаем ход
-        switchPlayer();
+        // Завершение хода: удаляем все съеденные шашки
+        for (Checker c : capturedThisTurn) {
+            board.removeChecker(c);
+        }
+        capturedThisTurn.clear();
+        activeCapturingChecker = null;
 
-        // Проверяем конец игры
+        switchPlayer();
         checkGameOver();
     }
 
-    // Проверка, является ли ход взятием
     private boolean isCaptureMove(Cell from, Cell to) {
         return Math.abs(from.getX() - to.getX()) == 2 &&
                 Math.abs(from.getY() - to.getY()) == 2;
     }
 
-    // Получение сбитой шашки
     private Cell getCapturedCell(Cell from, Cell to) {
         int capturedX = (from.getX() + to.getX()) / 2;
         int capturedY = (from.getY() + to.getY()) / 2;
         return board.getCell(capturedX, capturedY);
     }
 
-    // Проверка превращения в дамку
     private void checkPromotion(Checker checker) {
         int y = checker.getCell().getY();
         if (checker.getType() == CheckerType.REGULAR) {
@@ -190,32 +178,25 @@ public class Game {
         }
     }
 
-    // Проверка возможности продолжения взятия
-    private boolean canContinueCapture(Checker checker) {
-        return !getCaptureMoves(checker).isEmpty();
+    private boolean canContinueCapture(Checker checker, List<Checker> alreadyCaptured) {
+        return !getCaptureMoves(checker, alreadyCaptured).isEmpty();
     }
 
-    // Переключение активного игрока
     private void switchPlayer() {
         currentPlayer = (currentPlayer == players[0]) ? players[1] : players[0];
     }
 
-    // Проверка окончания игры
     private void checkGameOver() {
-        // Проверяем, остались ли шашки у игрока
         List<Checker> currentPlayerCheckers = board.getCheckersByColor(currentPlayer.getColor());
         if (currentPlayerCheckers.isEmpty()) {
             gameState = currentPlayer.getColor() == Color.WHITE ? GameState.BLACK_WIN : GameState.WHITE_WIN;
             return;
         }
-
-        // Проверяем, может ли игрок сделать ход
         if (!canPlayerMove(currentPlayer)) {
             gameState = currentPlayer.getColor() == Color.WHITE ? GameState.BLACK_WIN : GameState.WHITE_WIN;
         }
     }
 
-    // Проверка возможности хода для игрока
     private boolean canPlayerMove(Player player) {
         for (Checker checker : board.getCheckersByColor(player.getColor())) {
             if (!getValidMoves(checker).isEmpty()) {
