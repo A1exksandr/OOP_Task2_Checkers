@@ -114,7 +114,7 @@ public class Game {
         }
     }
 
-    // Обновленный метод getCaptureMoves
+    // метод getCaptureMoves
     private List<Cell> getCaptureMoves(Checker checker) {
         List<Cell> captureMoves = new ArrayList<>();
         findCaptureMoves(checker, checker.getCell(), captureMoves, new ArrayList<>());
