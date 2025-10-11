@@ -10,26 +10,33 @@ public class GamePanel extends JPanel {
     private Game game;
     private Board board;
     private Checker selectedChecker;
-    private java.util.List<Cell> highlightedCells;
+    private List<Cell> highlightedCells;
+    private final GameSettings settings;
 
-    private static final int CELL_SIZE = 60;
     private static final int BOARD_MARGIN = 10;
     private static final Color LIGHT_COLOR = new Color(240, 217, 181);
     private static final Color DARK_COLOR = new Color(181, 136, 99);
     private static final Color HIGHLIGHT_COLOR = new Color(100, 200, 100, 128);
 
-    public GamePanel() {
-        setPreferredSize(new Dimension(8 * CELL_SIZE + 2 * BOARD_MARGIN,
-                8 * CELL_SIZE + 2 * BOARD_MARGIN));
+    public GamePanel(GameSettings settings) {
+        this.settings = settings;
+        setPreferredSize(new Dimension(
+                8 * settings.getCellSize() + 2 * BOARD_MARGIN,
+                8 * settings.getCellSize() + 2 * BOARD_MARGIN
+        ));
         setBackground(Color.LIGHT_GRAY);
-        this.game = new Game();
+        this.game = new Game(settings);
         this.board = game.getBoard();
         this.highlightedCells = new java.util.ArrayList<>();
         addMouseListener(new CheckersMouseAdapter());
     }
 
+    public Game getGame() {
+        return game;
+    }
+
     public void startNewGame() {
-        game = new Game();
+        game = new Game(settings);
         board = game.getBoard();
         selectedChecker = null;
         highlightedCells.clear();
@@ -51,9 +58,9 @@ public class GamePanel extends JPanel {
             for (int y = 0; y < 8; y++) {
                 Color cellColor = ((x + y) % 2 == 0) ? LIGHT_COLOR : DARK_COLOR;
                 g2d.setColor(cellColor);
-                g2d.fillRect(BOARD_MARGIN + x * CELL_SIZE,
-                        BOARD_MARGIN + y * CELL_SIZE,
-                        CELL_SIZE, CELL_SIZE);
+                g2d.fillRect(BOARD_MARGIN + x * settings.getCellSize(),
+                        BOARD_MARGIN + y * settings.getCellSize(),
+                        settings.getCellSize(), settings.getCellSize());
             }
         }
     }
@@ -61,9 +68,9 @@ public class GamePanel extends JPanel {
     private void drawHighlightedCells(Graphics2D g2d) {
         g2d.setColor(HIGHLIGHT_COLOR);
         for (Cell cell : highlightedCells) {
-            g2d.fillRect(BOARD_MARGIN + cell.getX() * CELL_SIZE,
-                    BOARD_MARGIN + cell.getY() * CELL_SIZE,
-                    CELL_SIZE, CELL_SIZE);
+            g2d.fillRect(BOARD_MARGIN + cell.getX() * settings.getCellSize(),
+                    BOARD_MARGIN + cell.getY() * settings.getCellSize(),
+                    settings.getCellSize(), settings.getCellSize());
         }
     }
 
@@ -74,15 +81,16 @@ public class GamePanel extends JPanel {
     }
 
     private void drawChecker(Graphics2D g2d, Checker checker) {
-        int x = BOARD_MARGIN + checker.getCell().getX() * CELL_SIZE;
-        int y = BOARD_MARGIN + checker.getCell().getY() * CELL_SIZE;
+        int size = settings.getCellSize();
+        int x = BOARD_MARGIN + checker.getCell().getX() * size;
+        int y = BOARD_MARGIN + checker.getCell().getY() * size;
         g2d.setColor(checker.getColor());
-        g2d.fillOval(x + 5, y + 5, CELL_SIZE - 10, CELL_SIZE - 10);
+        g2d.fillOval(x + 5, y + 5, size - 10, size - 10);
         g2d.setColor(Color.BLACK);
-        g2d.drawOval(x + 5, y + 5, CELL_SIZE - 10, CELL_SIZE - 10);
+        g2d.drawOval(x + 5, y + 5, size - 10, size - 10);
         if (checker.getType() == CheckerType.KING) {
             g2d.setColor(checker.isWhite() ? Color.BLACK : Color.WHITE);
-            g2d.drawString("K", x + CELL_SIZE/2 - 5, y + CELL_SIZE/2 + 5);
+            g2d.drawString("K", x + size/2 - 5, y + size/2 + 5);
         }
     }
 
@@ -91,7 +99,6 @@ public class GamePanel extends JPanel {
         public void mouseClicked(MouseEvent e) {
             Cell clickedCell = getCellAt(e.getPoint());
             if (clickedCell == null) return;
-
             if (selectedChecker == null) {
                 trySelectChecker(clickedCell);
             } else {
@@ -101,10 +108,6 @@ public class GamePanel extends JPanel {
     }
 
     private void trySelectChecker(Cell cell) {
-        // Если идёт цепочка взятий — нельзя выбирать другую шашку
-        if (game.getActiveCapturingChecker() != null) {
-            return;
-        }
         if (cell.hasChecker() && cell.getChecker().getColor() == game.getCurrentPlayer().getColor()) {
             selectedChecker = cell.getChecker();
             highlightedCells = game.getValidMoves(selectedChecker);
@@ -117,10 +120,6 @@ public class GamePanel extends JPanel {
             tryMoveSelectedChecker(clickedCell);
         } else if (clickedCell.hasChecker() &&
                 clickedCell.getChecker().getColor() == game.getCurrentPlayer().getColor()) {
-            // Если цепочка активна — нельзя менять шашку
-            if (game.getActiveCapturingChecker() != null) {
-                return;
-            }
             selectedChecker = clickedCell.getChecker();
             highlightedCells = game.getValidMoves(selectedChecker);
             repaint();
@@ -132,13 +131,7 @@ public class GamePanel extends JPanel {
     private void tryMoveSelectedChecker(Cell targetCell) {
         if (highlightedCells.contains(targetCell)) {
             game.makeMove(selectedChecker, targetCell);
-            // Не сбрасываем выбор, если идёт цепочка
-            if (game.getActiveCapturingChecker() != null) {
-                highlightedCells = game.getValidMoves(selectedChecker);
-                repaint();
-            } else {
-                deselectChecker();
-            }
+            deselectChecker();
             if (game.isGameOver()) {
                 showGameOverDialog();
             }
@@ -152,8 +145,8 @@ public class GamePanel extends JPanel {
     }
 
     private Cell getCellAt(Point point) {
-        int x = (point.x - BOARD_MARGIN) / CELL_SIZE;
-        int y = (point.y - BOARD_MARGIN) / CELL_SIZE;
+        int x = (point.x - BOARD_MARGIN) / settings.getCellSize();
+        int y = (point.y - BOARD_MARGIN) / settings.getCellSize();
         if (x >= 0 && x < 8 && y >= 0 && y < 8) {
             return board.getCell(x, y);
         }
@@ -163,10 +156,9 @@ public class GamePanel extends JPanel {
     private void showGameOverDialog() {
         String message;
         switch (game.getGameState()) {
-            case WHITE_WIN: message = Messages.get("result.white_wins"); break;
-            case BLACK_WIN: message = Messages.get("result.black_wins"); break;
-            case DRAW:      message = Messages.get("result.draw"); break;
-            default:        message = "Game over!";
+            case WHITE_WIN: message = "Победа белых!"; break;
+            case BLACK_WIN: message = "Победа чёрных!"; break;
+            default: message = "Игра завершена!";
         }
         JOptionPane.showMessageDialog(this, message);
     }

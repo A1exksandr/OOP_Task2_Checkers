@@ -1,24 +1,28 @@
 package checkers;
 
 import java.awt.*;
+import java.io.*;
+import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
 
 public class Game {
     private Board board;
     private Player[] players;
     private Player currentPlayer;
     private GameState gameState;
-    private Checker activeCapturingChecker = null;
-    private List<Checker> capturedThisTurn = new ArrayList<>();
+    private GameSettings settings;
+    private List<MoveRecord> moveHistory = new ArrayList<>();
 
-    public Game() {
+    public Game(GameSettings settings) {
+        this.settings = settings;
         this.board = new Board();
         this.players = new Player[] {
                 new Player(Color.WHITE, PlayerType.HUMAN, "Белые"),
                 new Player(Color.BLACK, PlayerType.HUMAN, "Черные")
         };
-        this.currentPlayer = players[0]; // Белые начинают
+        this.currentPlayer = players[0];
         this.gameState = GameState.IN_PROGRESS;
     }
 
@@ -26,26 +30,16 @@ public class Game {
     public Board getBoard() { return board; }
     public Player getCurrentPlayer() { return currentPlayer; }
     public GameState getGameState() { return gameState; }
-    public Checker getActiveCapturingChecker() { return activeCapturingChecker; }
+    public List<MoveRecord> getMoveHistory() { return new ArrayList<>(moveHistory); }
 
-    // Основной метод получения допустимых ходов
     public List<Cell> getValidMoves(Checker checker) {
-        if (activeCapturingChecker != null) {
-            if (checker == activeCapturingChecker) {
-                return getCaptureMoves(checker, capturedThisTurn);
-            } else {
-                return new ArrayList<>(); // нельзя ходить другими шашками
-            }
-        }
-
         List<Cell> validMoves = new ArrayList<>();
         if (checker.getColor() != currentPlayer.getColor()) {
             return validMoves;
         }
-
         boolean mustCapture = mustCaptureExists();
         if (mustCapture) {
-            validMoves.addAll(getCaptureMoves(checker, new ArrayList<>()));
+            validMoves.addAll(getCaptureMoves(checker));
         } else {
             validMoves.addAll(getNormalMoves(checker));
         }
@@ -54,7 +48,7 @@ public class Game {
 
     private boolean mustCaptureExists() {
         for (Checker checker : board.getCheckersByColor(currentPlayer.getColor())) {
-            if (!getCaptureMoves(checker, new ArrayList<>()).isEmpty()) {
+            if (!getCaptureMoves(checker).isEmpty()) {
                 return true;
             }
         }
@@ -93,7 +87,6 @@ public class Game {
                     enemyCell.getChecker().getColor() != checker.getColor() &&
                     targetCell.isEmpty() &&
                     !capturedCheckers.contains(enemyCell.getChecker())) {
-
                 captureMoves.add(targetCell);
                 List<Checker> newCaptured = new ArrayList<>(capturedCheckers);
                 newCaptured.add(enemyCell.getChecker());
@@ -103,12 +96,8 @@ public class Game {
     }
 
     private List<Cell> getCaptureMoves(Checker checker) {
-        return getCaptureMoves(checker, new ArrayList<>());
-    }
-
-    private List<Cell> getCaptureMoves(Checker checker, List<Checker> alreadyCaptured) {
         List<Cell> captureMoves = new ArrayList<>();
-        findCaptureMoves(checker, checker.getCell(), captureMoves, alreadyCaptured);
+        findCaptureMoves(checker, checker.getCell(), captureMoves, new ArrayList<>());
         return captureMoves;
     }
 
@@ -116,6 +105,8 @@ public class Game {
         if (checker.getType() == CheckerType.KING) {
             return new int[][]{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
         } else {
+            // В РУССКИХ шашках обычная шашка ходит ТОЛЬКО вперёд
+            // В ИСПАНСКИХ — тоже только вперёд (но может бить назад при цепочке — уже реализовано)
             if (checker.isWhite()) {
                 return new int[][]{{1, -1}, {-1, -1}};
             } else {
@@ -125,34 +116,31 @@ public class Game {
     }
 
     public void makeMove(Checker checker, Cell targetCell) {
-        if (activeCapturingChecker != null && activeCapturingChecker != checker) {
-            return; // нельзя менять шашку во время цепочки
-        }
-
         Cell fromCell = checker.getCell();
+        boolean isCapture = isCaptureMove(fromCell, targetCell);
+
+        // Записываем ход
+        moveHistory.add(new MoveRecord(
+                currentPlayer.getColor(),
+                fromCell.getX(), fromCell.getY(),
+                targetCell.getX(), targetCell.getY(),
+                isCapture
+        ));
+
         board.moveChecker(checker, targetCell);
 
-        if (isCaptureMove(fromCell, targetCell)) {
+        if (isCapture) {
             Cell capturedCell = getCapturedCell(fromCell, targetCell);
             if (capturedCell != null && capturedCell.hasChecker()) {
-                Checker capturedChecker = capturedCell.getChecker();
-                capturedThisTurn.add(capturedChecker);
+                board.removeChecker(capturedCell.getChecker());
             }
         }
 
         checkPromotion(checker);
 
-        if (isCaptureMove(fromCell, targetCell) && canContinueCapture(checker, capturedThisTurn)) {
-            activeCapturingChecker = checker;
+        if (isCapture && canContinueCapture(checker)) {
             return;
         }
-
-        // Завершение хода: удаляем все съеденные шашки
-        for (Checker c : capturedThisTurn) {
-            board.removeChecker(c);
-        }
-        capturedThisTurn.clear();
-        activeCapturingChecker = null;
 
         switchPlayer();
         checkGameOver();
@@ -178,8 +166,8 @@ public class Game {
         }
     }
 
-    private boolean canContinueCapture(Checker checker, List<Checker> alreadyCaptured) {
-        return !getCaptureMoves(checker, alreadyCaptured).isEmpty();
+    private boolean canContinueCapture(Checker checker) {
+        return !getCaptureMoves(checker).isEmpty();
     }
 
     private void switchPlayer() {
@@ -208,5 +196,28 @@ public class Game {
 
     public boolean isGameOver() {
         return gameState != GameState.IN_PROGRESS;
+    }
+
+    // Сохранение истории
+    public void saveHistoryToFile() {
+        try {
+            Path dir = Paths.get("history");
+            Files.createDirectories(dir);
+            String filename = "game_" + System.currentTimeMillis() + ".txt";
+            Path file = dir.resolve(filename);
+
+            try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(file))) {
+                writer.println("История игры");
+                String mode = (settings.getVariant() == GameSettings.Variant.RUSSIAN) ? "Русские шашки" : "Испанские шашки";
+                writer.println("Режим: " + mode);
+                writer.println("=".repeat(40));
+                for (int i = 0; i < moveHistory.size(); i++) {
+                    writer.printf("%2d. %s%n", i + 1, moveHistory.get(i));
+                }
+            }
+            JOptionPane.showMessageDialog(null, "История сохранена в:\n" + file.toAbsolutePath());
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(null, "Ошибка сохранения: " + e.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
+        }
     }
 }

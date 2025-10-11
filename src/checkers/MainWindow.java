@@ -1,10 +1,8 @@
-// MainWindow.java (обновлённый)
 package checkers;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.util.Locale;
 
 public class MainWindow extends JFrame {
     private GamePanel gamePanel;
@@ -18,27 +16,23 @@ public class MainWindow extends JFrame {
     }
 
     private void initializeWindow() {
-        updateTitle();
+        setTitle("Шашки");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
     }
 
-    private void updateTitle() {
-        setTitle(Messages.get("game.title"));
-    }
-
     private void initializeComponents() {
-        gamePanel = new GamePanel();
+        gamePanel = new GamePanel(settings);
     }
 
     private void setupMenu() {
         JMenuBar menuBar = new JMenuBar();
-        JMenu gameMenu = new JMenu(Messages.get("button.settings"));
-        JMenuItem settingsItem = new JMenuItem(Messages.get("button.settings"));
-        settingsItem.addActionListener(this::openSettingsDialog);
+        JMenu gameMenu = new JMenu("Игра");
+        JMenuItem settingsItem = new JMenuItem("Настройки");
+        settingsItem.addActionListener(this::openSettings);
         gameMenu.add(settingsItem);
 
-        JMenuItem newGameItem = new JMenuItem(Messages.get("button.new_game"));
+        JMenuItem newGameItem = new JMenuItem("Новая игра");
         newGameItem.addActionListener(e -> startNewGame());
         gameMenu.add(newGameItem);
 
@@ -46,13 +40,14 @@ public class MainWindow extends JFrame {
         setJMenuBar(menuBar);
     }
 
-    private void openSettingsDialog(ActionEvent e) {
-        SettingsDialog dialog = new SettingsDialog(this, settings);
+    private void openSettings(ActionEvent e) {
+        SettingsDialog dialog = new SettingsDialog(this, settings, gamePanel.getGame());
         dialog.setVisible(true);
-        // После закрытия — обновляем язык и заголовок
-        Messages.setLocale(settings.getLocale());
-        updateTitle();
-        // Если хочешь — можно перезапустить игру при смене правил
+        // Пересоздаём панель с новыми настройками
+        getContentPane().remove(gamePanel);
+        gamePanel = new GamePanel(settings);
+        getContentPane().add(gamePanel, BorderLayout.CENTER);
+        pack();
     }
 
     private void setupLayout() {
