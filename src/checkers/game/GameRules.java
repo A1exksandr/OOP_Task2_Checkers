@@ -1,11 +1,12 @@
-// checkers/game/GameRules.java
+// GameRules.java тоже должен быть сериализуемым
 package checkers.game;
 
-import checkers.classes.Checker;
-import checkers.enums.CheckerType;
 import java.awt.Color;
+import java.io.Serializable;
 
-public class GameRules {
+public class GameRules implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     public enum RuleType {
         RUSSIAN,
         SPANISH
@@ -23,15 +24,12 @@ public class GameRules {
 
     public int[][] getDirectionsForNormalChecker(Color color) {
         if (isRussian()) {
-            // В русских шашках обычные шашки **ходят только вперёд**, но **бьют и вперёд, и назад**
-            // Однако для *обычных ходов* (не взятий) — только вперёд
             if (color == Color.WHITE) {
                 return new int[][]{{1, -1}, {-1, -1}};
             } else {
                 return new int[][]{{1, 1}, {-1, 1}};
             }
         } else {
-            // Испанские — аналогично: ходят только вперёд
             if (color == Color.WHITE) {
                 return new int[][]{{1, -1}, {-1, -1}};
             } else {
@@ -42,10 +40,8 @@ public class GameRules {
 
     public int[][] getDirectionsForCapture(Color color) {
         if (isRussian()) {
-            // В русских шашках **все фигуры бьют в любых направлениях**
             return new int[][]{{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
         } else {
-            // В испанских — обычные шашки бьют только вперёд
             if (color == Color.WHITE) {
                 return new int[][]{{1, -1}, {-1, -1}};
             } else {
@@ -55,6 +51,6 @@ public class GameRules {
     }
 
     public boolean canKingMoveMultipleSteps() {
-        return isRussian(); // В испанских дамка ходит на 1 клетку, в русских — сколько угодно
+        return isRussian();
     }
 }

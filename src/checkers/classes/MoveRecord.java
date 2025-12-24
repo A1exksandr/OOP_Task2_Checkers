@@ -1,8 +1,11 @@
 package checkers.classes;
 
 import java.awt.*;
+import java.io.Serializable;
 
-public class MoveRecord {
+public class MoveRecord implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final Color playerColor;
     private final int fromX, fromY, toX, toY;
     private final boolean isCapture;

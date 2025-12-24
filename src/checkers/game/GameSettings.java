@@ -1,8 +1,11 @@
 package checkers.game;
 
 import java.util.Locale;
+import java.io.Serializable;
 
-public class GameSettings {
+public class GameSettings implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     public enum Variant {
         SPANISH,
         RUSSIAN

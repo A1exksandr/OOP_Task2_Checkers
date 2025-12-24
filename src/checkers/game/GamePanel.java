@@ -1,8 +1,6 @@
 package checkers.game;
 
-import checkers.classes.Board;
-import checkers.classes.Cell;
-import checkers.classes.Checker;
+import checkers.classes.*;
 import checkers.enums.CheckerType;
 
 import javax.swing.*;
@@ -25,15 +23,30 @@ public class GamePanel extends JPanel {
 
     public GamePanel(GameSettings settings) {
         this.settings = settings;
-        setPreferredSize(new Dimension(
-                8 * settings.getCellSize() + 2 * BOARD_MARGIN,
-                8 * settings.getCellSize() + 2 * BOARD_MARGIN
-        ));
+        initSize();
         setBackground(Color.LIGHT_GRAY);
         this.game = new Game(settings);
         this.board = game.getBoard();
         this.highlightedCells = new java.util.ArrayList<>();
         addMouseListener(new CheckersMouseAdapter());
+    }
+
+    // Конструктор для загруженной игры
+    public GamePanel(GameSettings settings, Game loadedGame) {
+        this.settings = settings;
+        initSize();
+        setBackground(Color.LIGHT_GRAY);
+        this.game = loadedGame;
+        this.board = game.getBoard();
+        this.highlightedCells = new java.util.ArrayList<>();
+        addMouseListener(new CheckersMouseAdapter());
+    }
+
+    private void initSize() {
+        setPreferredSize(new Dimension(
+                8 * settings.getCellSize() + 2 * BOARD_MARGIN,
+                8 * settings.getCellSize() + 2 * BOARD_MARGIN
+        ));
     }
 
     public Game getGame() {
@@ -48,6 +61,7 @@ public class GamePanel extends JPanel {
         repaint();
     }
 
+    // Остальные методы без изменений...
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);

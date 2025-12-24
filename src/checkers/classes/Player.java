@@ -1,10 +1,12 @@
 package checkers.classes;
 
 import checkers.enums.PlayerType;
-
 import java.awt.*;
+import java.io.Serializable;
 
-public class Player {
+public class Player implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final Color color;
     private final PlayerType type;
     private String name;
