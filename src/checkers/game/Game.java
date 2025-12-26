@@ -4,31 +4,35 @@ import checkers.classes.*;
 import checkers.enums.CheckerType;
 import checkers.enums.GameState;
 import checkers.enums.PlayerType;
+import checkers.json.JsonHelper;
 
 import java.awt.*;
 import java.io.*;
 import java.nio.file.*;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
 import javax.swing.*;
 
-public class Game implements Serializable {
-    private static final long serialVersionUID = 1L;
-
+public class Game {
     private Board board;
     private Player[] players;
     private Player currentPlayer;
     private GameState gameState;
     private GameSettings settings;
     private List<MoveRecord> moveHistory = new ArrayList<>();
-    private transient GameRules rules; // не сериализуем, воссоздаем при загрузке
+    private GameRules rules;
     private Rectangle windowBounds;
 
-    private static final String SAVE_FILE = "saved_game.dat";
+    private static final String SAVE_DIR = "saves";
+    private static final String SAVE_FILE = "checkers_save.json";
 
     public Game(GameSettings settings) {
         this.settings = settings;
-        initRules();
+        this.rules = new GameRules(
+                settings.getVariant() == GameSettings.Variant.RUSSIAN
+                        ? GameRules.RuleType.RUSSIAN
+                        : GameRules.RuleType.SPANISH
+        );
         this.board = new Board();
         this.players = new Player[] {
                 new Player(Color.WHITE, PlayerType.HUMAN, "Белые"),
@@ -38,33 +42,37 @@ public class Game implements Serializable {
         this.gameState = GameState.IN_PROGRESS;
     }
 
-    // Конструктор для загруженной игры
-    private Game(GameSettings settings, Board board, Player currentPlayer,
-                 GameState gameState, List<MoveRecord> moveHistory) {
+    // Специальный конструктор для загрузки без создания начальных шашек
+    private Game(GameSettings settings, boolean forLoading) {
         this.settings = settings;
-        initRules();
-        this.board = board;
-        this.players = new Player[] {
-                new Player(Color.WHITE, PlayerType.HUMAN, "Белые"),
-                new Player(Color.BLACK, PlayerType.HUMAN, "Черные")
-        };
-        this.currentPlayer = currentPlayer;
-        this.gameState = gameState;
-        this.moveHistory = moveHistory != null ? moveHistory : new ArrayList<>();
-    }
-
-    private void initRules() {
         this.rules = new GameRules(
                 settings.getVariant() == GameSettings.Variant.RUSSIAN
                         ? GameRules.RuleType.RUSSIAN
                         : GameRules.RuleType.SPANISH
         );
+        // Создаем пустую доску без начальных шашек
+        this.board = createEmptyBoard();
+        this.players = new Player[] {
+                new Player(Color.WHITE, PlayerType.HUMAN, "Белые"),
+                new Player(Color.BLACK, PlayerType.HUMAN, "Черные")
+        };
+        this.currentPlayer = players[0];
+        this.gameState = GameState.IN_PROGRESS;
     }
 
-    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-        in.defaultReadObject();
-        // Восстанавливаем правила после десериализации
-        initRules();
+    // Создание пустой доски без шашек
+    private Board createEmptyBoard() {
+        Board emptyBoard = new Board();
+        // Удаляем все шашки, созданные конструктором Board
+        List<Checker> checkersToRemove = new ArrayList<>(emptyBoard.getCheckers());
+        for (Checker checker : checkersToRemove) {
+            Cell cell = checker.getCell();
+            if (cell != null) {
+                cell.removeChecker();
+            }
+        }
+        emptyBoard.getCheckers().clear();
+        return emptyBoard;
     }
 
     // Геттеры
@@ -79,45 +87,338 @@ public class Game implements Serializable {
         this.windowBounds = bounds;
     }
 
-    // Сохранение игры
+    // Сохранение игры в JSON формате
     public void saveGame() {
-        try (ObjectOutputStream oos = new ObjectOutputStream(
-                new FileOutputStream(SAVE_FILE))) {
-            oos.writeObject(this);
+        try {
+            // Создаем директорию для сохранений
+            Path dir = Paths.get(SAVE_DIR);
+            Files.createDirectories(dir);
+            Path file = dir.resolve(SAVE_FILE);
+
+            // Собираем данные для сохранения
+            Map<String, Object> saveData = new HashMap<>();
+
+            // Сохраняем настройки
+            Map<String, Object> settingsData = new HashMap<>();
+            settingsData.put("variant", settings.getVariant().name());
+            settingsData.put("locale", settings.getLocale().getLanguage());
+            settingsData.put("cellSize", settings.getCellSize());
+            saveData.put("settings", settingsData);
+
+            // Сохраняем состояние игры
+            saveData.put("gameState", gameState.name());
+            saveData.put("currentPlayer", currentPlayer.getColor() == Color.WHITE ? "WHITE" : "BLACK");
+
+            // Сохраняем размер окна
+            if (windowBounds != null) {
+                Map<String, Integer> windowData = new HashMap<>();
+                windowData.put("x", windowBounds.x);
+                windowData.put("y", windowBounds.y);
+                windowData.put("width", windowBounds.width);
+                windowData.put("height", windowBounds.height);
+                saveData.put("window", windowData);
+            }
+
+            // Сохраняем шашки
+            List<Map<String, Object>> checkersData = new ArrayList<>();
+            System.out.println("Сохранение шашек: " + board.getCheckers().size());
+            for (Checker checker : board.getCheckers()) {
+                Cell cell = checker.getCell();
+                Map<String, Object> checkerData = new HashMap<>();
+                checkerData.put("color", checker.getColor() == Color.WHITE ? "WHITE" : "BLACK");
+                checkerData.put("type", checker.getType().name());
+                checkerData.put("x", cell.getX());
+                checkerData.put("y", cell.getY());
+                checkersData.add(checkerData);
+                System.out.println("  Сохранена шашка: " + checker.getColor() + " " + checker.getType() +
+                        " на [" + cell.getX() + "," + cell.getY() + "]");
+            }
+            saveData.put("checkers", checkersData);
+
+            // Сохраняем историю ходов (упрощенно)
+            List<String> historyData = new ArrayList<>();
+            for (MoveRecord record : moveHistory) {
+                historyData.add(record.toString());
+            }
+            saveData.put("history", historyData);
+
+            // Конвертируем в JSON и сохраняем
+            String json = JsonHelper.toJson(saveData);
+
+            try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(file))) {
+                writer.println(json);
+            }
+
+            System.out.println("Игра сохранена в JSON: " + file.toAbsolutePath());
+
         } catch (IOException e) {
-            System.err.println("Ошибка сохранения игры: " + e.getMessage());
+            System.err.println("Ошибка сохранения JSON: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // Статический метод загрузки
+    // Загрузка игры из JSON файла
     public static Game loadGame() {
-        File file = new File(SAVE_FILE);
-        if (!file.exists()) {
+        Path file = Paths.get(SAVE_DIR, SAVE_FILE);
+        if (!Files.exists(file)) {
+            System.out.println("Файл сохранения не найден: " + file.toAbsolutePath());
             return null;
         }
 
-        try (ObjectInputStream ois = new ObjectInputStream(
-                new FileInputStream(SAVE_FILE))) {
-            return (Game) ois.readObject();
+        try {
+            // Читаем весь файл
+            String json = new String(Files.readAllBytes(file));
+
+            // Парсим JSON (упрощенный парсинг)
+            Map<String, Object> data = parseJson(json);
+            if (data == null) {
+                System.err.println("Неверный формат JSON файла");
+                return null;
+            }
+
+            // Восстанавливаем настройки
+            GameSettings settings = new GameSettings();
+            Map<String, Object> settingsData = (Map<String, Object>) data.get("settings");
+            if (settingsData != null) {
+                String variant = (String) settingsData.get("variant");
+                settings.setVariant(GameSettings.Variant.valueOf(variant));
+
+                String locale = (String) settingsData.get("locale");
+                if ("en".equals(locale)) {
+                    settings.setLocale(Locale.ENGLISH);
+                } else if ("fr".equals(locale)) {
+                    settings.setLocale(Locale.FRENCH);
+                } else {
+                    settings.setLocale(new Locale("ru", "RU"));
+                }
+
+                Number cellSize = (Number) settingsData.get("cellSize");
+                settings.setCellSize(cellSize.intValue());
+            }
+
+            // Создаем игру с пустой доской
+            Game game = new Game(settings, true);
+
+            // Восстанавливаем состояние игры
+            String gameStateStr = (String) data.get("gameState");
+            if (gameStateStr != null) {
+                game.gameState = GameState.valueOf(gameStateStr);
+                System.out.println("Загружено состояние игры: " + gameStateStr);
+            }
+
+            String currentPlayerStr = (String) data.get("currentPlayer");
+            if (currentPlayerStr != null) {
+                game.currentPlayer = "WHITE".equals(currentPlayerStr) ? game.players[0] : game.players[1];
+                System.out.println("Загружен текущий игрок: " + currentPlayerStr);
+            }
+
+            // Восстанавливаем размер окна
+            Map<String, Object> windowData = (Map<String, Object>) data.get("window");
+            if (windowData != null) {
+                int x = ((Number) windowData.get("x")).intValue();
+                int y = ((Number) windowData.get("y")).intValue();
+                int width = ((Number) windowData.get("width")).intValue();
+                int height = ((Number) windowData.get("height")).intValue();
+                game.windowBounds = new Rectangle(x, y, width, height);
+                System.out.println("Загружен размер окна: " + x + "," + y + "," + width + "," + height);
+            }
+
+            // Восстанавливаем шашки
+            List<Map<String, Object>> checkersData = (List<Map<String, Object>>) data.get("checkers");
+            if (checkersData != null) {
+                System.out.println("Загружаем шашек: " + checkersData.size());
+                for (Map<String, Object> checkerData : checkersData) {
+                    String colorStr = (String) checkerData.get("color");
+                    String typeStr = (String) checkerData.get("type");
+                    int x = ((Number) checkerData.get("x")).intValue();
+                    int y = ((Number) checkerData.get("y")).intValue();
+
+                    Color color = "WHITE".equals(colorStr) ? Color.WHITE : Color.BLACK;
+                    CheckerType type = CheckerType.valueOf(typeStr);
+
+                    Cell cell = game.board.getCell(x, y);
+                    if (cell != null) {
+                        System.out.println("Создаем шашку: " + colorStr + " " + typeStr + " на [" + x + "," + y + "]");
+
+                        // СОЗДАЕМ шашку и ДОБАВЛЯЕМ в список
+                        Checker checker = new Checker(color, cell);
+                        game.board.getCheckers().add(checker); // ВАЖНО: добавляем в список!
+
+                        if (type == CheckerType.KING) {
+                            checker.promoteToKing();
+                        }
+                    } else {
+                        System.err.println("Ошибка: ячейка не найдена [" + x + "," + y + "]");
+                    }
+                }
+            }
+
+            // Проверяем результат
+            System.out.println("Всего загружено шашек: " + game.board.getCheckers().size());
+
+            // Проверяем состояние игры
+            if (game.gameState == GameState.WHITE_WIN || game.gameState == GameState.BLACK_WIN) {
+                System.out.println("Игра уже завершена: " + game.gameState);
+            } else {
+                // Проверяем, есть ли шашки у игроков
+                int whiteCount = game.board.getCheckersByColor(Color.WHITE).size();
+                int blackCount = game.board.getCheckersByColor(Color.BLACK).size();
+                System.out.println("Белых шашек: " + whiteCount + ", черных: " + blackCount);
+
+                if (whiteCount == 0 || blackCount == 0) {
+                    System.out.println("Обнаружено окончание игры по количеству шашек");
+                    game.checkGameOver();
+                }
+            }
+
+            System.out.println("Игра загружена из JSON: " + file.toAbsolutePath());
+            return game;
+
         } catch (Exception e) {
-            System.err.println("Ошибка загрузки игры: " + e.getMessage());
+            System.err.println("Ошибка загрузки игры из JSON: " + e.getMessage());
             e.printStackTrace();
-
-            // Если файл поврежден, удаляем его
-            file.delete();
             return null;
         }
+    }
+
+    // Простой парсер JSON (остается без изменений)
+    private static Map<String, Object> parseJson(String json) {
+        // Упрощенный парсинг для нашего формата
+        json = json.trim();
+        if (!json.startsWith("{") || !json.endsWith("}")) {
+            return null;
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        json = json.substring(1, json.length() - 1).trim();
+
+        // Разбиваем на пары ключ:значение
+        String[] pairs = splitJsonPairs(json);
+        for (String pair : pairs) {
+            String[] keyValue = pair.split(":", 2);
+            if (keyValue.length == 2) {
+                String key = keyValue[0].trim().replaceAll("^\"|\"$", "");
+                String value = keyValue[1].trim();
+                result.put(key, parseJsonValue(value));
+            }
+        }
+
+        return result;
+    }
+
+    private static String[] splitJsonPairs(String json) {
+        List<String> pairs = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+
+        for (char c : json.toCharArray()) {
+            if (c == '{' || c == '[') depth++;
+            else if (c == '}' || c == ']') depth--;
+            else if (c == ',' && depth == 0) {
+                pairs.add(current.toString());
+                current = new StringBuilder();
+                continue;
+            }
+            current.append(c);
+        }
+
+        if (current.length() > 0) {
+            pairs.add(current.toString());
+        }
+
+        return pairs.toArray(new String[0]);
+    }
+
+    private static Object parseJsonValue(String value) {
+        value = value.trim();
+
+        if (value.startsWith("\"")) {
+            // Строка
+            return value.substring(1, value.length() - 1).replace("\\\"", "\"");
+        } else if (value.equals("true") || value.equals("false")) {
+            // Boolean
+            return Boolean.valueOf(value);
+        } else if (value.equals("null")) {
+            // Null
+            return null;
+        } else if (value.startsWith("{")) {
+            // Объект
+            return parseJson(value);
+        } else if (value.startsWith("[")) {
+            // Массив
+            return parseJsonArray(value);
+        } else {
+            // Число
+            try {
+                if (value.contains(".")) {
+                    return Double.parseDouble(value);
+                } else {
+                    return Integer.parseInt(value);
+                }
+            } catch (NumberFormatException e) {
+                return value;
+            }
+        }
+    }
+
+    private static List<Object> parseJsonArray(String arrayStr) {
+        List<Object> result = new ArrayList<>();
+        arrayStr = arrayStr.substring(1, arrayStr.length() - 1).trim();
+
+        if (arrayStr.isEmpty()) {
+            return result;
+        }
+
+        String[] items = splitJsonArray(arrayStr);
+        for (String item : items) {
+            result.add(parseJsonValue(item.trim()));
+        }
+
+        return result;
+    }
+
+    private static String[] splitJsonArray(String arrayStr) {
+        List<String> items = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+
+        for (char c : arrayStr.toCharArray()) {
+            if (c == '{' || c == '[') depth++;
+            else if (c == '}' || c == ']') depth--;
+            else if (c == ',' && depth == 0) {
+                items.add(current.toString());
+                current = new StringBuilder();
+                continue;
+            }
+            current.append(c);
+        }
+
+        if (current.length() > 0) {
+            items.add(current.toString());
+        }
+
+        return items.toArray(new String[0]);
     }
 
     // Удаление сохранения
     public void deleteSave() {
-        File file = new File(SAVE_FILE);
-        if (file.exists()) {
-            file.delete();
+        try {
+            Path file = Paths.get(SAVE_DIR, SAVE_FILE);
+            if (Files.exists(file)) {
+                Files.delete(file);
+                System.out.println("Сохранение JSON удалено: " + file.toAbsolutePath());
+            }
+        } catch (IOException e) {
+            System.err.println("Ошибка удаления сохранения: " + e.getMessage());
         }
     }
 
+    // Проверка существования сохранения
+    public static boolean saveExists() {
+        return Files.exists(Paths.get(SAVE_DIR, SAVE_FILE));
+    }
+
+    // Остальные методы без изменений...
     public List<Cell> getValidMoves(Checker checker) {
         List<Cell> validMoves = new ArrayList<>();
         if (checker.getColor() != currentPlayer.getColor()) {
@@ -338,10 +639,16 @@ public class Game implements Serializable {
         List<Checker> currentPlayerCheckers = board.getCheckersByColor(currentPlayer.getColor());
         if (currentPlayerCheckers.isEmpty()) {
             gameState = currentPlayer.getColor() == Color.WHITE ? GameState.BLACK_WIN : GameState.WHITE_WIN;
+            System.out.println("Игра окончена! Победитель: " +
+                    (gameState == GameState.WHITE_WIN ? "Белые" : "Черные"));
             return;
         }
+
+        // Проверяем, может ли текущий игрок сделать ход
         if (!canPlayerMove(currentPlayer)) {
             gameState = currentPlayer.getColor() == Color.WHITE ? GameState.BLACK_WIN : GameState.WHITE_WIN;
+            System.out.println("Игра окончена! Игрок не может сделать ход. Победитель: " +
+                    (gameState == GameState.WHITE_WIN ? "Белые" : "Черные"));
         }
     }
 

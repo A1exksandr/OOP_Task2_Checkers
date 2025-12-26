@@ -61,7 +61,15 @@ public class GamePanel extends JPanel {
         repaint();
     }
 
-    // Остальные методы без изменений...
+    // Новый метод для обновления игры без создания новой панели
+    public void updateGame(Game newGame) {
+        this.game = newGame;
+        this.board = game.getBoard();
+        this.selectedChecker = null;
+        this.highlightedCells.clear();
+        repaint(); // Важно! Перерисовываем панель
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);

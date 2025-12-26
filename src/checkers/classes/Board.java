@@ -8,9 +8,29 @@ public class Board {
     private Cell[][] cells;
     private List<Checker> checkers;
 
-    public Board() {
+    public Board(boolean empty) {
         initializeBoard();
-        setupCheckers();
+        if (!empty) {
+            setupCheckers();
+        } else {
+            checkers = new ArrayList<>();
+        }
+    }
+
+    public Board() {
+        this(false); // обычная доска с шашками
+    }
+
+    // Метод для полной очистки доски
+    public void clearBoard() {
+        // Удаляем все шашки с клеток
+        for (int x = 0; x < 8; x++) {
+            for (int y = 0; y < 8; y++) {
+                cells[x][y].removeChecker();
+            }
+        }
+        // Очищаем список шашек
+        checkers.clear();
     }
 
     private void initializeBoard() {
@@ -79,6 +99,12 @@ public class Board {
     public void removeChecker(Checker checker) {
         checker.getCell().removeChecker();
         checkers.remove(checker);
+    }
+
+    public void addChecker(Checker checker) {
+        if (!checkers.contains(checker)) {
+            checkers.add(checker);
+        }
     }
 
     // Превращение в дамку

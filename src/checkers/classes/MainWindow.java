@@ -9,7 +9,6 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.io.File;
 
 public class MainWindow extends JFrame {
     private GamePanel gamePanel;
@@ -29,12 +28,14 @@ public class MainWindow extends JFrame {
             if (loadedGame.getWindowBounds() != null) {
                 setBounds(loadedGame.getWindowBounds());
             } else {
+                setSize(600, 600);
                 setLocationRelativeTo(null);
             }
         } else {
             // Создаем новую игру
             Messages.setLocale(settings.getLocale());
             gamePanel = new GamePanel(settings);
+            setSize(600, 600);
             setLocationRelativeTo(null);
         }
 
@@ -69,7 +70,7 @@ public class MainWindow extends JFrame {
                 gameMenu.getItem(2).setText(Messages.get("button.load_game"));
 
                 // Обновляем состояние кнопки загрузки
-                gameMenu.getItem(2).setEnabled(new File("saved_game.dat").exists());
+                gameMenu.getItem(2).setEnabled(Game.saveExists());
             }
         }
     }
@@ -81,12 +82,6 @@ public class MainWindow extends JFrame {
     private void initializeWindow() {
         setTitle(Messages.get("game.title"));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
-        // Если границы не установлены (например, при новой игре)
-        if (getBounds() == null || getBounds().isEmpty()) {
-            setSize(600, 600);
-            setLocationRelativeTo(null);
-        }
     }
 
     private void setupMenu() {
@@ -104,7 +99,7 @@ public class MainWindow extends JFrame {
         // Кнопка загрузки игры
         JMenuItem loadGameItem = new JMenuItem(Messages.get("button.load_game"));
         loadGameItem.addActionListener(e -> loadGame());
-        loadGameItem.setEnabled(new File("saved_game.dat").exists());
+        loadGameItem.setEnabled(Game.saveExists());
         gameMenu.add(loadGameItem);
 
         menuBar.add(gameMenu);
@@ -121,10 +116,12 @@ public class MainWindow extends JFrame {
             updateWindowTitle();
             updateMenuTexts();
 
-            // Пересоздаем игровую панель
-            getContentPane().remove(gamePanel);
-            gamePanel = new GamePanel(settings, loadedGame);
-            getContentPane().add(gamePanel, BorderLayout.CENTER);
+            // ВАЖНО: обновляем существующую панель вместо создания новой
+            gamePanel.updateGame(loadedGame);
+
+            // Перерисовываем всю панель
+            gamePanel.revalidate();
+            gamePanel.repaint();
 
             // Восстанавливаем размер окна
             if (loadedGame.getWindowBounds() != null) {
@@ -137,13 +134,13 @@ public class MainWindow extends JFrame {
             repaint();
 
             JOptionPane.showMessageDialog(this,
-                    Messages.get("message.game_loaded"),
-                    Messages.get("message.info"),
+                    "Игра загружена успешно!",
+                    "Информация",
                     JOptionPane.INFORMATION_MESSAGE);
         } else {
             JOptionPane.showMessageDialog(this,
-                    Messages.get("message.no_saved_game"),
-                    Messages.get("message.error"),
+                    "Не удалось загрузить игру.",
+                    "Ошибка",
                     JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -159,11 +156,14 @@ public class MainWindow extends JFrame {
         updateWindowTitle();
         updateMenuTexts();
 
-        // Пересоздаём игровую панель с новыми настройками
-        getContentPane().remove(gamePanel);
-        gamePanel = new GamePanel(settings);
-        getContentPane().add(gamePanel, BorderLayout.CENTER);
+        // ВАЖНО: обновляем панель с новыми настройками
+        Game newGame = new Game(settings);
+        gamePanel.updateGame(newGame);
+
+        // Перерисовываем
         pack();
+        revalidate();
+        repaint();
     }
 
     private void setupLayout() {
@@ -180,10 +180,12 @@ public class MainWindow extends JFrame {
         updateMenuTexts();
 
         // Создаем новую игру
-        gamePanel.startNewGame();
+        Game newGame = new Game(settings);
+        gamePanel.updateGame(newGame);
 
-        // Обновляем окно
+        // Перерисовываем
         pack();
+        revalidate();
         repaint();
     }
 }
